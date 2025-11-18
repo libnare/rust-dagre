@@ -1,1 +1,25 @@
+# Rust
 /target
+Cargo.lock
+**/*.rs.bk
+
+# WASM build outputs
+/pkg
+/pkg-node
+/pkg-bundler
+node_modules/
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test outputs
+*.log

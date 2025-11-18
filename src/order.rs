@@ -97,7 +97,8 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
         }
 
         // OPTIMIZATION: Use Arc<str> HashMap to avoid String clones
-        let mut mapped_entries: HashMap<Arc<str>, MappedEntry> = HashMap::with_capacity(entry_count);
+        let mut mapped_entries: HashMap<Arc<str>, MappedEntry> =
+            HashMap::with_capacity(entry_count);
 
         // OPTIMIZATION: Build Arc<str> -> index mapping (no more String clones!)
         let entry_ids: Vec<Arc<str>> = entries.iter().map(|e| e.v.clone()).collect();
@@ -544,7 +545,10 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
                     let prev_child: Option<Arc<str>>;
                     if let Some(ref parent_v) = parent {
                         prev_child = prev.get(parent_v.as_str()).cloned();
-                        prev.insert(crate::graph::arc_str(parent_v), crate::graph::arc_str(child_v));
+                        prev.insert(
+                            crate::graph::arc_str(parent_v),
+                            crate::graph::arc_str(child_v),
+                        );
                     } else {
                         prev_child = root_prev.clone();
                         root_prev = Some(crate::graph::arc_str(child_v));
@@ -956,31 +960,22 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
     };
 
     // Main order optimization
-    let mut step_start = std::time::Instant::now();
-
     let mut layering = init_order(g);
-    eprintln!("[ORDER PERF] init_order: {:?}", step_start.elapsed());
 
-    step_start = std::time::Instant::now();
     assign_order(g, &layering);
-    eprintln!("[ORDER PERF] assign_order: {:?}", step_start.elapsed());
 
     let rank = max_rank(g).unwrap_or(0);
-    eprintln!("[ORDER PERF] max_rank: {}", rank);
 
     // Note: shared_nodes_map removed as it's not actually used
 
     let mut down_layer_graphs: Vec<LayerGraph> = Vec::new();
     let mut up_layer_graphs: Vec<LayerGraph> = Vec::new();
 
-    step_start = std::time::Instant::now();
     let mut nodes: Vec<crate::graph::GraphNode> = g.nodes.values().cloned().collect();
-    eprintln!("[ORDER PERF] collect nodes: {:?}", step_start.elapsed());
 
     let mut rank_indexes: Option<HashMap<i32, usize>> = None;
 
     if !g.has_border.unwrap_or(false) {
-        step_start = std::time::Instant::now();
         // OPTIMIZATION: Extract ranks once to avoid repeated label.read() during sort
         // Previous: sort_by with label.read() called ~30,000 times for XLarge
         // Now: extract once, sort by cached value
@@ -1007,13 +1002,7 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
         nodes = sorted_nodes;
 
         rank_indexes = Some(ri);
-        eprintln!(
-            "[ORDER PERF] sort and index nodes: {:?}",
-            step_start.elapsed()
-        );
     }
-
-    step_start = std::time::Instant::now();
 
     // Build layer graphs in parallel
     let ranks: Vec<i32> = (0..rank).collect();
@@ -1033,12 +1022,6 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
         up_layer_graphs.push(up);
     }
 
-    eprintln!(
-        "[ORDER PERF] build_layer_graphs ({} ranks): {:?}",
-        rank,
-        step_start.elapsed()
-    );
-
     let mut best_cc = usize::MAX;
     let mut best: Vec<Vec<Arc<str>>> = Vec::new();
     let mut i = 0;
@@ -1046,11 +1029,7 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
     let mut prev_cc = usize::MAX;
     let mut same_cc_count = 0;
 
-    let loop_start = std::time::Instant::now();
-    eprintln!("[ORDER PERF] Starting sweep loop");
-
     while last_best < 4 {
-        let iter_start = std::time::Instant::now();
         let bias_right = i % 4 >= 2;
 
         if i % 2 == 1 {
@@ -1059,7 +1038,6 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
             sweep_layer_graphs(&mut up_layer_graphs, bias_right, g, i, false);
         }
 
-        let matrix_start = std::time::Instant::now();
         // Incremental update: only re-sort layers instead of rebuilding
         // This is much faster than build_layer_matrix
         // UNSAFE: Direct node lookup without bounds checking
@@ -1073,33 +1051,14 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
                     .unwrap_unchecked()
             });
         }
-        let matrix_time = matrix_start.elapsed();
 
-        let cc_start = std::time::Instant::now();
         let cc = cross_count(g, &layering, best_cc);
-        let cc_time = cc_start.elapsed();
-
-        if i < 10 {
-            eprintln!(
-                "[ORDER PERF] iter {}: {:?} (matrix: {:?}, cc: {:?}), cc={}, best_cc={}",
-                i,
-                iter_start.elapsed(),
-                matrix_time,
-                cc_time,
-                cc,
-                best_cc
-            );
-        }
 
         // OPTIMIZATION: Early termination if crossings stabilize
         // If we get the same crossing count multiple times, further iterations unlikely to improve
         if cc == prev_cc && cc == best_cc {
             same_cc_count += 1;
             if same_cc_count >= 2 {
-                eprintln!(
-                    "[ORDER PERF] Early termination: crossing count stabilized at {}",
-                    cc
-                );
                 break;
             }
         } else {
@@ -1117,19 +1076,11 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
         i += 1;
 
         if i > 50 {
-            eprintln!("[ORDER PERF] Breaking after 50 iterations");
             break;
         }
     }
-    eprintln!(
-        "[ORDER PERF] sweep loop total: {:?}, iterations: {}",
-        loop_start.elapsed(),
-        i
-    );
 
     // Reduce crossings (port from TypeScript)
-    step_start = std::time::Instant::now();
-
     let calc_dir = |idx0: usize, idx1: usize| -> i32 {
         if idx0 < idx1 {
             1
@@ -1771,24 +1722,15 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
         }
     }
 
-    eprintln!("[ORDER PERF] reduce crossings: {:?}", step_start.elapsed());
-
-    step_start = std::time::Instant::now();
     assign_order(g, &best);
-    eprintln!(
-        "[ORDER PERF] final assign_order: {:?}",
-        step_start.elapsed()
-    );
 
     // Sync atomic orders back to labels for other phases (position, denormalize)
-    step_start = std::time::Instant::now();
     for node in g.nodes.values_mut() {
         let order_val = node.order_atomic.load(Ordering::Relaxed);
         if order_val > 0 {
             node.label.write().order = Some(order_val);
         }
     }
-    eprintln!("[ORDER PERF] sync to labels: {:?}", step_start.elapsed());
 
     // OPTIMIZATION: Skip drop entirely using mem::forget (arena allocator pattern)
     // These large structures (10,000+ LayerGraphs) take 4-5 seconds to drop in XLarge graphs
@@ -1797,10 +1739,8 @@ pub fn order(g: &mut DagreGraph, _layout: &LayoutConfig) {
     // 1. No Drop implementations have critical side effects (no file handles, etc.)
     // 2. Memory will be reclaimed by OS when process exits
     // 3. Performance gain: 4.77s -> ~0s for XLarge graphs
-    step_start = std::time::Instant::now();
     std::mem::forget(down_layer_graphs);
     std::mem::forget(up_layer_graphs);
     std::mem::forget(best);
     std::mem::forget(layering);
-    eprintln!("[ORDER PERF] cleanup (forget): {:?}", step_start.elapsed());
 }

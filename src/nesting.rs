@@ -45,7 +45,12 @@ pub fn nesting_graph_run(g: &mut DagreGraph, state: &mut LayoutState) {
 fn tree_depths(g: &DagreGraph) -> HashMap<std::sync::Arc<str>, i32> {
     let mut depths = HashMap::new();
 
-    fn dfs_depth(g: &DagreGraph, v: &str, depth: i32, depths: &mut HashMap<std::sync::Arc<str>, i32>) {
+    fn dfs_depth(
+        g: &DagreGraph,
+        v: &str,
+        depth: i32,
+        depths: &mut HashMap<std::sync::Arc<str>, i32>,
+    ) {
         let children: Vec<std::sync::Arc<str>> = g.children(Some(v)).collect();
         for child in children {
             dfs_depth(g, &child, depth + 1, depths);

@@ -619,7 +619,13 @@ impl DagreGraph {
         }
     }
 
-    pub(crate) fn edge_key(&self, is_directed: bool, v: &str, w: &str, name: Option<&str>) -> EdgeKey {
+    pub(crate) fn edge_key(
+        &self,
+        is_directed: bool,
+        v: &str,
+        w: &str,
+        name: Option<&str>,
+    ) -> EdgeKey {
         let (v_arc, w_arc) = if !is_directed && v > w {
             (arc_str(w), arc_str(v))
         } else {

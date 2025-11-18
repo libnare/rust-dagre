@@ -17,26 +17,30 @@ pub mod graph;
 pub mod layout;
 pub mod types;
 
+// WASM bindings
+#[cfg(feature = "wasm")]
+pub mod wasm;
+
 // ===== Essential Public API (for 99% of users) =====
 /// Main layout function - computes positions for all nodes and edges
 pub use layout::layout;
 
 /// Input/output types for the layout algorithm
-pub use types::{Node, Edge, LayoutConfig, LayoutState, Point};
+pub use types::{Edge, LayoutConfig, LayoutState, Node, Point};
 
 /// Configuration enums
-pub use types::{RankDirection, Ranker, Alignment};
+pub use types::{Alignment, RankDirection, Ranker};
 
 // ===== Advanced Public API (for direct graph manipulation) =====
 /// Graph data structure for advanced use cases
 pub use graph::DagreGraph;
 
 /// Advanced types for direct graph manipulation
-/// 
+///
 /// **Note**: These types are only needed if you're directly manipulating `DagreGraph`.
 /// Most users should just use the `layout()` function.
-pub use types::{NodeLabel, EdgeLabel, EdgeKey};
+pub use types::{EdgeKey, EdgeLabel, NodeLabel};
 
 // ===== Utility functions =====
 /// Generate unique IDs and reset counter (useful for testing)
-pub use utils::{unique_id, reset_unique_id};
+pub use utils::{reset_unique_id, unique_id};

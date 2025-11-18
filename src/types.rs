@@ -100,7 +100,7 @@ pub(crate) struct BarycenterEntry {
 #[derive(Debug, Clone)]
 pub(crate) struct MappedEntry {
     pub(crate) indegree: usize,
-    pub(crate) in_entries: Vec<usize>,  // Indexes into the entries array
+    pub(crate) in_entries: Vec<usize>, // Indexes into the entries array
     pub(crate) out_entries: Vec<usize>, // Indexes into the entries array
     pub(crate) vs: Vec<Arc<str>>,
     pub(crate) i: usize,
@@ -216,7 +216,7 @@ impl Default for LayoutState {
 // These are exposed for advanced users who want to manipulate DagreGraph directly
 
 /// Internal node label with layout information
-/// 
+///
 /// **Advanced API**: Most users should not need to use this directly.
 /// Use the `layout()` function instead.
 #[derive(Debug, Clone, PartialEq)]
@@ -299,7 +299,7 @@ impl Default for NodeLabel {
 }
 
 /// Internal edge label with layout information
-/// 
+///
 /// **Advanced API**: Most users should not need to use this directly.
 /// Use the `layout()` function instead.
 #[derive(Debug, Clone, PartialEq)]
@@ -357,7 +357,7 @@ pub(crate) struct SelfEdge {
 }
 
 /// Edge key for identifying edges
-/// 
+///
 /// **Advanced API**: Most users should not need to use this directly.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EdgeKey {

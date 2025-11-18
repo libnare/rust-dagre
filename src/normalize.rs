@@ -1,7 +1,6 @@
 use crate::graph::DagreGraph;
 use crate::types::{EdgeKey, EdgeLabel, LayoutState, NodeLabel, Point};
 use crate::utils::add_dummy_node;
-use ahash::AHashSet as HashSet;
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -90,7 +89,6 @@ pub fn remove_empty_ranks(g: &mut DagreGraph, state: &LayoutState) {
 }
 
 pub fn normalize(g: &mut DagreGraph, state: &mut LayoutState) {
-    let mut step_timer = std::time::Instant::now();
     let edge_count = g.edges.len();
 
     // Phase 1: Collect edges and calculate dummy nodes (parallel)
@@ -131,14 +129,8 @@ pub fn normalize(g: &mut DagreGraph, state: &mut LayoutState) {
             }
         })
         .collect();
-    eprintln!(
-        "[NORMALIZE] collect edges: {:?}, count={}",
-        step_timer.elapsed(),
-        edges_to_process.len()
-    );
 
     // Phase 2: Calculate all dummy nodes and edges in parallel
-    step_timer = std::time::Instant::now();
     use std::sync::atomic::{AtomicUsize, Ordering};
     let dummy_counter = AtomicUsize::new(0);
 
@@ -197,66 +189,47 @@ pub fn normalize(g: &mut DagreGraph, state: &mut LayoutState) {
             (dummies, edges, orig_v.clone(), w.clone(), name.clone())
         })
         .collect();
-    eprintln!("[NORMALIZE] calculate parallel: {:?}", step_timer.elapsed());
 
     // Phase 3: Apply changes to graph (sequential but optimized)
-    step_timer = std::time::Instant::now();
     state.dummy_chains = Some(Vec::with_capacity(edge_count / 4));
 
     // First pass: remove original edges
-    let mut remove_timer = std::time::Instant::now();
     for (_, _, orig_v, w, name) in &normalize_data {
         g.remove_edge(orig_v, w, name.as_deref());
     }
-    eprintln!("[NORMALIZE] remove edges: {:?}", remove_timer.elapsed());
 
     // Second pass: add all dummy nodes and edges (OPTIMIZED - move instead of clone)
-    remove_timer = std::time::Instant::now();
     let mut all_edges = Vec::new();
     for (dummies, edges, _, _, _) in normalize_data.into_iter() {
         for (dummy_id, label, is_chain_start) in dummies {
             g.set_node(&dummy_id, Some(label)); // Move label (no clone!)
             if is_chain_start {
-                state.dummy_chains.as_mut().unwrap().push(crate::graph::arc_str(&dummy_id));
+                state
+                    .dummy_chains
+                    .as_mut()
+                    .unwrap()
+                    .push(crate::graph::arc_str(&dummy_id));
             }
         }
         all_edges.push(edges);
     }
-    eprintln!("[NORMALIZE] add dummy nodes: {:?}", remove_timer.elapsed());
 
     // Third pass: add all edges (OPTIMIZED: use set_edge_fast since nodes already exist)
-    remove_timer = std::time::Instant::now();
     for edges in all_edges {
         for (v, w, label, name) in edges {
             g.set_edge_fast(&v, &w, label, name.as_deref()); // No node creation overhead!
         }
     }
-    eprintln!("[NORMALIZE] add edges: {:?}", remove_timer.elapsed());
-    eprintln!(
-        "[NORMALIZE] apply changes total: {:?}",
-        step_timer.elapsed()
-    );
 }
 
 pub fn denormalize(g: &mut DagreGraph, state: &LayoutState) {
     use std::sync::Mutex;
 
-    let mut step_timer = std::time::Instant::now();
-
     // Pre-allocate with estimated capacity
-    let chain_count = state.dummy_chains.as_ref().map_or(0, |c| c.len());
-    let all_removed_nodes = Mutex::new(HashSet::with_capacity(chain_count * 10));
-    let all_removed_edges = Mutex::new(HashSet::with_capacity(chain_count * 10));
+    let all_removed_nodes: Mutex<ahash::AHashSet<Arc<str>>> = Mutex::new(ahash::AHashSet::new());
+    let all_removed_edges: Mutex<ahash::AHashSet<EdgeKey>> = Mutex::new(ahash::AHashSet::new());
 
-    // Note: edge_refs are not used after order phase, so we skip clearing
-    eprintln!(
-        "[DENORMALIZE] clear edge_refs: {:?} (skipped)",
-        step_timer.elapsed()
-    );
-
-    step_timer = std::time::Instant::now();
     if let Some(dummy_chains) = &state.dummy_chains {
-        // Phase 1: Process chains in parallel and collect info
         type ChainData = (
             String,
             String,
@@ -343,13 +316,8 @@ pub fn denormalize(g: &mut DagreGraph, state: &LayoutState) {
                 ))
             })
             .collect();
-        eprintln!(
-            "[DENORMALIZE] process chains parallel: {:?}",
-            step_timer.elapsed()
-        );
 
         // Phase 2: Apply changes sequentially
-        step_timer = std::time::Instant::now();
         for (edge_v, edge_w, edge_name, edge_label, nodes_to_remove, edges_to_remove) in chain_data
         {
             g.set_edge(&edge_v, &edge_w, Some(edge_label), edge_name.as_deref());
@@ -364,20 +332,14 @@ pub fn denormalize(g: &mut DagreGraph, state: &LayoutState) {
                 all_removed_edges.lock().unwrap().insert(edge);
             }
         }
-        eprintln!("[DENORMALIZE] apply changes: {:?}", step_timer.elapsed());
     }
 
     // Clean up edges and node references
-    step_timer = std::time::Instant::now();
     let removed_nodes = all_removed_nodes.into_inner().unwrap();
     let removed_edges = all_removed_edges.into_inner().unwrap();
-    eprintln!("[DENORMALIZE] unwrap mutex: {:?}", step_timer.elapsed());
 
-    step_timer = std::time::Instant::now();
     g.edges.retain(|k, _| !removed_edges.contains(k));
-    eprintln!("[DENORMALIZE] retain edges: {:?}", step_timer.elapsed());
 
-    step_timer = std::time::Instant::now();
     // OPTIMIZATION: Parallel cleaning of node references
     // Note: IndexMap doesn't support par_iter_mut, so we keep sequential
     for node in g.nodes.values_mut() {
@@ -388,10 +350,8 @@ pub fn denormalize(g: &mut DagreGraph, state: &LayoutState) {
         node.successors
             .retain(|k, _| !removed_nodes.contains(k.as_ref()));
     }
-    eprintln!("[DENORMALIZE] clean node refs: {:?}", step_timer.elapsed());
 
     // Physically remove nodes at the end
-    step_timer = std::time::Instant::now();
     // UNSAFE OPTIMIZATION: Parallel filtering via Vec conversion
     // SAFETY: This is the final cleanup, we can reconstruct the IndexMap
     use rayon::prelude::*;
@@ -413,7 +373,6 @@ pub fn denormalize(g: &mut DagreGraph, state: &LayoutState) {
         .map(|(k, v)| (crate::graph::arc_str(&k), v))
         .collect();
     g.removed_nodes.clear();
-    eprintln!("[DENORMALIZE] remove nodes: {:?}", step_timer.elapsed());
 }
 
 pub fn remove_edge_label_proxies(g: &mut DagreGraph) {

@@ -13,9 +13,7 @@ struct NodeCache {
 }
 
 pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
-    let mut step_timer = std::time::Instant::now();
-
-    // OPTIMIZATION: Build comprehensive node cache upfront
+    // Build node cache for lock-free reads
     let node_cache: HashMap<Arc<str>, NodeCache> = g
         .nodes
         .iter()
@@ -30,7 +28,6 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
             (id.clone(), cache)
         })
         .collect();
-    eprintln!("[POSITION] build node cache: {:?}", step_timer.elapsed());
 
     // Helper: Add conflict between two nodes
     let add_conflict =
@@ -158,14 +155,12 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                               conflicts: &HashMap<Arc<str>, HashSet<Arc<str>>>,
                               neighbor_fn: &dyn Fn(&Arc<str>) -> Vec<Arc<str>>|
      -> (HashMap<Arc<str>, Arc<str>>, HashMap<Arc<str>, Arc<str>>) {
-        let va_start = std::time::Instant::now();
         let total_nodes: usize = layering.iter().map(|layer| layer.len()).sum();
         let mut root = HashMap::with_capacity(total_nodes);
         let mut align = HashMap::with_capacity(total_nodes);
         let mut pos = HashMap::with_capacity(total_nodes);
 
         // Initialize root, align, and pos
-        let init_start = std::time::Instant::now();
         for layer in layering {
             for (order, v) in layer.iter().enumerate() {
                 // Minimize clones: reuse v reference
@@ -174,27 +169,18 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                 pos.insert(v.clone(), order);
             }
         }
-        let init_time = init_start.elapsed();
 
         // Process each layer
-        let mut neighbor_time = std::time::Duration::ZERO;
-        let mut sort_time = std::time::Duration::ZERO;
-        let mut conflict_time = std::time::Duration::ZERO;
-        let mut update_time = std::time::Duration::ZERO;
 
         for (_layer_idx, layer) in layering.iter().enumerate() {
             let mut prev_idx = -1i32;
             for v in layer {
-                let n_start = std::time::Instant::now();
                 let ws = neighbor_fn(v);
-                neighbor_time += n_start.elapsed();
 
                 if !ws.is_empty() {
-                    let s_start = std::time::Instant::now();
                     // OPTIMIZATION: All nodes are in pos, no need for unwrap_or
                     let mut ws_array = ws;
                     ws_array.sort_unstable_by_key(|w| *pos.get(w).unwrap());
-                    sort_time += s_start.elapsed();
 
                     let mp = (ws_array.len() - 1) as f64 / 2.0000001;
                     let il = mp.ceil() as usize;
@@ -208,12 +194,9 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                         // Check if align.get(v) === v (like TypeScript)
                         let is_aligned = align.get(v).map(|s| s == v).unwrap_or(false);
 
-                        let c_start = std::time::Instant::now();
                         let no_conflict = !has_conflict(conflicts, v, w);
-                        conflict_time += c_start.elapsed();
 
                         if is_aligned && prev_idx < w_pos as i32 && no_conflict {
-                            let u_start = std::time::Instant::now();
                             // OPTIMIZATION: Minimize String clones
                             if let Some(x) = root.get(w).cloned() {
                                 align.insert(w.clone(), v.clone());
@@ -221,17 +204,10 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                                 align.insert(v.clone(), x);
                                 prev_idx = w_pos as i32;
                             }
-                            update_time += u_start.elapsed();
                         }
                     }
                 }
             }
-        }
-
-        let total_va = va_start.elapsed();
-        if layering.len() > 100 {
-            eprintln!("[VA DETAIL] total={:?}, init={:?}, neighbor={:?}, sort={:?}, conflict={:?}, update={:?}", 
-                total_va, init_time, neighbor_time, sort_time, conflict_time, update_time);
         }
 
         (root, align)
@@ -559,14 +535,11 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
 
     // Main position algorithm
     // OPTIMIZATION: Skip as_non_compound_graph clone - POSITION doesn't use parent/children
-    step_timer = std::time::Instant::now();
     let layering = build_layer_matrix(g);
-    eprintln!("[POSITION] build_layer_matrix: {:?}", step_timer.elapsed());
 
     let ranksep = layout.ranksep.unwrap_or(50.0);
 
     // Assign Y coordinates based on rank
-    step_timer = std::time::Instant::now();
     let mut y = 0.0;
     for layer in &layering {
         // Read height from cache (lock-free)
@@ -584,24 +557,12 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
         }
         y += max_height + ranksep;
     }
-    eprintln!("[POSITION] assign Y: {:?}", step_timer.elapsed());
 
     // Find conflicts
-    step_timer = std::time::Instant::now();
     let type1_conflicts = find_type1_conflicts(g, &layering, &node_cache);
-    eprintln!(
-        "[POSITION] find_type1_conflicts: {:?}",
-        step_timer.elapsed()
-    );
 
-    step_timer = std::time::Instant::now();
     let type2_conflicts = find_type2_conflicts(g, &layering, &node_cache);
-    eprintln!(
-        "[POSITION] find_type2_conflicts: {:?}",
-        step_timer.elapsed()
-    );
 
-    step_timer = std::time::Instant::now();
     let mut conflicts = type1_conflicts;
     for (key, value) in type2_conflicts {
         conflicts
@@ -609,18 +570,13 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
             .or_insert_with(HashSet::new)
             .extend(value);
     }
-    eprintln!("[POSITION] merge conflicts: {:?}", step_timer.elapsed());
 
     // Calculate x coordinates for all 4 alignments in parallel
-    step_timer = std::time::Instant::now();
     let alignments = vec![("u", "l"), ("u", "r"), ("d", "l"), ("d", "r")];
 
     let xss_vec: Vec<(String, HashMap<Arc<str>, f64>)> = alignments
         .par_iter()
         .map(|&(vertical, horizontal)| {
-            let align_start = std::time::Instant::now();
-
-            let clone_start = std::time::Instant::now();
             let mut adjusted_layering: Vec<Vec<Arc<str>>> = if vertical == "u" {
                 layering.clone()
             } else {
@@ -633,9 +589,7 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                     .map(|layer| layer.iter().rev().cloned().collect())
                     .collect();
             }
-            let clone_time = clone_start.elapsed();
 
-            let neighbor_start = std::time::Instant::now();
             // OPTIMIZATION: Pre-build neighbor cache to avoid repeated lookups and clones
             let neighbor_cache: HashMap<Arc<str>, Vec<Arc<str>>> = adjusted_layering
                 .iter()
@@ -654,17 +608,14 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                 })
                 .collect();
 
-            let neighbor_fn: Box<dyn Fn(&Arc<str>) -> Vec<Arc<str>> + Send + Sync> = Box::new(move |v: &Arc<str>| {
-                neighbor_cache.get(v).cloned().unwrap_or_else(Vec::new)
-            });
-            let neighbor_time = neighbor_start.elapsed();
+            let neighbor_fn: Box<dyn Fn(&Arc<str>) -> Vec<Arc<str>> + Send + Sync> =
+                Box::new(move |v: &Arc<str>| {
+                    neighbor_cache.get(v).cloned().unwrap_or_else(Vec::new)
+                });
 
-            let valign_start = std::time::Instant::now();
             let (root, align) =
                 vertical_alignment(&adjusted_layering, &conflicts, neighbor_fn.as_ref());
-            let valign_time = valign_start.elapsed();
 
-            let hcomp_start = std::time::Instant::now();
             let mut xs = horizontal_compaction(
                 g,
                 layout,
@@ -674,16 +625,9 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
                 horizontal == "r",
                 &node_cache,
             );
-            let hcomp_time = hcomp_start.elapsed();
 
             if horizontal == "r" {
                 xs = xs.into_iter().map(|(k, v)| (k, -v)).collect();
-            }
-
-            let total_time = align_start.elapsed();
-            if vertical == "u" && horizontal == "l" {
-                eprintln!("[POSITION DETAIL] alignment ul: total={:?}, clone={:?}, neighbor={:?}, valign={:?}, hcomp={:?}", 
-                    total_time, clone_time, neighbor_time, valign_time, hcomp_time);
             }
 
             let alignment_key = format!("{}{}", vertical, horizontal);
@@ -692,14 +636,8 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
         .collect();
 
     let mut xss: HashMap<String, HashMap<Arc<str>, f64>> = xss_vec.into_iter().collect();
-    eprintln!(
-        "[POSITION] calculate alignments (parallel): {:?}",
-        step_timer.elapsed()
-    );
 
     // Find smallest width alignment (iterate in specific order to match TypeScript)
-    step_timer = std::time::Instant::now();
-
     let mut min_width = f64::INFINITY;
     let mut min_key = String::new();
     for key in &["ul", "ur", "dl", "dr"] {
@@ -721,10 +659,8 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
             }
         }
     }
-    eprintln!("[POSITION] find min width: {:?}", step_timer.elapsed());
 
     // Align all coordinates
-    step_timer = std::time::Instant::now();
     let align_to = xss.get(&min_key).unwrap();
     let align_to_vals: Vec<f64> = align_to.values().copied().collect();
     let align_to_min = align_to_vals.iter().copied().fold(f64::INFINITY, f64::min);
@@ -757,10 +693,8 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
             }
         }
     }
-    eprintln!("[POSITION] align coordinates: {:?}", step_timer.elapsed());
 
     // Balance and assign final x coordinates
-    step_timer = std::time::Instant::now();
     if let Some(align) = layout.align {
         let align_str = match align {
             Alignment::UL => "ul",
@@ -794,5 +728,4 @@ pub fn position(g: &mut DagreGraph, layout: &LayoutConfig) {
             }
         }
     }
-    eprintln!("[POSITION] assign final X: {:?}", step_timer.elapsed());
 }
