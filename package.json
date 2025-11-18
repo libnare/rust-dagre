@@ -1,0 +1,102 @@
+{
+  "name": "@libnare/rust-dagre",
+  "version": "0.1.0",
+  "description": "A directed graph layout library for Rust, Node.js, and WebAssembly",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "browser": "browser.js",
+  "napi": {
+    "binaryName": "rust-dagre",
+    "packageName": "@libnare/rust-dagre",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "i686-pc-windows-msvc",
+      "armv7-unknown-linux-gnueabihf",
+      "aarch64-apple-darwin",
+      "aarch64-linux-android",
+      "x86_64-unknown-freebsd",
+      "aarch64-unknown-linux-musl",
+      "aarch64-pc-windows-msvc",
+      "armv7-linux-androideabi",
+      "wasm32-wasip1-threads"
+    ]
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "browser.js",
+    "wasi-worker.mjs",
+    "wasi-worker-browser.mjs",
+    "rust-dagre.*.node",
+    "rust-dagre.*.wasm",
+    "rust-dagre.wasi.cjs",
+    "rust-dagre.wasi-browser.js"
+  ],
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:wasm": "napi build --platform --target wasm32-wasip1-threads --release",
+    "build:debug": "napi build --platform",
+    "artifacts": "napi artifacts",
+    "version": "napi version",
+    "universal": "napi universalize",
+    "test": "node __test__/native.spec.js",
+    "test:wasm": "node __test__/wasm.spec.js",
+    "test:cargo": "cargo test",
+    "prepublishOnly": "napi prepublish -t npm",
+    "lint": "oxlint .",
+    "format": "run-p format:prettier format:rs",
+    "format:prettier": "prettier . -w",
+    "format:rs": "cargo fmt",
+    "prepare": "husky"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/libnare/rust-dagre.git"
+  },
+  "keywords": [
+    "graph",
+    "layout",
+    "dagre",
+    "napi-rs",
+    "node-addon",
+    "wasm",
+    "webassembly"
+  ],
+  "author": "Libnare",
+  "license": "MIT",
+  "devDependencies": {
+    "@napi-rs/cli": "^3.4.1",
+    "@napi-rs/wasm-runtime": "^1.0.7",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.6",
+    "npm-run-all2": "^8.0.4",
+    "oxlint": "^1.29.0",
+    "prettier": "^3.6.2"
+  },
+  "dependencies": {
+    "@node-rs/helper": "^1.6.0"
+  },
+  "lint-staged": {
+    "*.@(js|ts|tsx)": [
+      "oxlint --fix"
+    ],
+    "*.@(js|ts|tsx|yml|yaml|md|json)": [
+      "prettier --write"
+    ]
+  },
+  "prettier": {
+    "printWidth": 120,
+    "semi": false,
+    "trailingComma": "all",
+    "singleQuote": true,
+    "arrowParens": "always"
+  }
+}

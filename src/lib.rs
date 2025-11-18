@@ -1,6 +1,8 @@
 // Rust port of dagre.js - a directed graph layout library
 // Based on: https://github.com/dagrejs/dagre
 
+#![deny(clippy::all)]
+
 // Internal modules (implementation details)
 mod acyclic;
 mod coordinate_system;
@@ -17,9 +19,8 @@ pub mod graph;
 pub mod layout;
 pub mod types;
 
-// WASM bindings
-#[cfg(feature = "wasm")]
-pub mod wasm;
+// N-API bindings (exposed to Node.js and WASM)
+pub mod napi_interface;
 
 // ===== Essential Public API (for 99% of users) =====
 /// Main layout function - computes positions for all nodes and edges

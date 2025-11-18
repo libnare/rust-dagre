@@ -1,5 +1,2 @@
-[target.wasm32-unknown-unknown]
-rustflags = ["-C", "target-feature=+atomics,+bulk-memory"]
-
-[unstable]
-build-std = ["panic_abort", "std"]
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
