@@ -1,6 +1,6 @@
 [package]
 name = "rust-dagre"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Libnare"]
 description = "A directed graph layout library for Rust, Node.js, and WebAssembly"
